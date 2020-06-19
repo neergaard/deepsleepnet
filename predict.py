@@ -251,7 +251,7 @@ def custom_rnn(cell, inputs, initial_state=None, dtype=None,
 
         return (outputs, state, states)
 
-    
+
 def custom_bidirectional_rnn(cell_fw, cell_bw, inputs,
                              initial_state_fw=None, initial_state_bw=None,
                              dtype=None, sequence_length=None, scope=None):
@@ -336,26 +336,26 @@ def custom_bidirectional_rnn(cell_fw, cell_bw, inputs,
 class CustomDeepSleepNet(DeepSleepNet):
 
     def __init__(
-        self, 
-        batch_size, 
-        input_dims, 
-        n_classes, 
+        self,
+        batch_size,
+        input_dims,
+        n_classes,
         seq_length,
         n_rnn_layers,
         return_last,
-        is_train, 
+        is_train,
         reuse_params,
-        use_dropout_feature, 
+        use_dropout_feature,
         use_dropout_sequence,
         name="deepsleepnet"
     ):
         super(DeepSleepNet, self).__init__(
-            batch_size=batch_size, 
-            input_dims=input_dims, 
-            n_classes=n_classes, 
-            is_train=is_train, 
-            reuse_params=reuse_params, 
-            use_dropout=use_dropout_feature, 
+            batch_size=batch_size,
+            input_dims=input_dims,
+            n_classes=n_classes,
+            is_train=is_train,
+            reuse_params=reuse_params,
+            use_dropout=use_dropout_feature,
             name=name
         )
 
@@ -448,7 +448,7 @@ class CustomDeepSleepNet(DeepSleepNet):
             self.fw_final_state = fw_state
             self.bw_final_state = bw_state
 
-            self.fw_states = fw_states		
+            self.fw_states = fw_states
             self.bw_states = bw_states
 
         # Append output
@@ -476,13 +476,13 @@ class CustomDeepSleepNet(DeepSleepNet):
 
 
 def custom_run_epoch(
-    sess, 
-    network, 
-    inputs, 
-    targets, 
-    train_op, 
-    is_train, 
-    output_dir, 
+    sess,
+    network,
+    inputs,
+    targets,
+    train_op,
+    is_train,
+    output_dir,
     subject_idx
 ):
     start_time = time.time()
@@ -593,10 +593,10 @@ def custom_run_epoch(
 
 
 def predict(
-    data_dir, 
-    model_dir, 
-    output_dir, 
-    n_subjects, 
+    data_dir,
+    model_dir,
+    output_dir,
+    n_subjects,
     n_subjects_per_fold
 ):
     # Ground truth and predictions
@@ -607,15 +607,15 @@ def predict(
     with tf.Graph().as_default(), tf.Session() as sess:
         # Build the network
         valid_net = CustomDeepSleepNet(
-            batch_size=1, 
-            input_dims=EPOCH_SEC_LEN*100, 
-            n_classes=NUM_CLASSES, 
+            batch_size=1,
+            input_dims=EPOCH_SEC_LEN*100,
+            n_classes=NUM_CLASSES,
             seq_length=25,
             n_rnn_layers=2,
             return_last=False,
-            is_train=False, 
-            reuse_params=False, 
-            use_dropout_feature=True, 
+            is_train=False,
+            reuse_params=False,
+            use_dropout_feature=True,
             use_dropout_sequence=True
         )
 
@@ -626,8 +626,8 @@ def predict(
             fold_idx = subject_idx // n_subjects_per_fold
 
             checkpoint_path = os.path.join(
-                model_dir, 
-                "fold{}".format(fold_idx), 
+                model_dir,
+                "fold{}".format(fold_idx),
                 "deepsleepnet"
             )
 
@@ -637,10 +637,14 @@ def predict(
             print "Model restored from: {}\n".format(tf.train.latest_checkpoint(checkpoint_path))
 
             # Load testing data
-            x, y = SeqDataLoader.load_subject_data(
-                data_dir=data_dir, 
+            x, y = SeqDataLoader.load_h5_subject_data(
+                data_dir=data_dir,
                 subject_idx=subject_idx
             )
+            # x, y = SeqDataLoader.load_subject_data(
+            #     data_dir=data_dir,
+            #     subject_idx=subject_idx
+            # )
 
             # Loop each epoch
             print "[{}] Predicting ...\n".format(datetime.now())
@@ -663,13 +667,13 @@ def predict(
             # Report performance
             print_performance(
                 sess, valid_net.name,
-                n_examples, duration, loss, 
+                n_examples, duration, loss,
                 cm_, acc_, mf1_
             )
 
             y_true.extend(y_true_)
             y_pred.extend(y_pred_)
-        
+
     # Overall performance
     print "[{}] Overall prediction performance\n".format(datetime.now())
     y_true = np.asarray(y_true)
@@ -695,8 +699,8 @@ def main(argv=None):
     if not os.path.exists(FLAGS.output_dir):
         os.makedirs(FLAGS.output_dir)
 
-    n_subjects = 20
-    n_subjects_per_fold = 1
+    n_subjects = 100
+    n_subjects_per_fold = 5
     predict(
         data_dir=FLAGS.data_dir,
         model_dir=FLAGS.model_dir,

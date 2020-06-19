@@ -21,7 +21,15 @@ SAMPLING_RATE = 256
 
 def print_n_samples_each_class(labels):
     import numpy as np
-    unique_labels = np.unique(labels)
-    for c in unique_labels:
-        n_samples = len(np.where(labels == c)[0])
-        print "{}: {}".format(class_dict[c], n_samples)
+    if isinstance(labels, list):
+        unique_labels = [0, 1, 2, 3, 4]
+        for c in unique_labels:
+            n_samples = 0
+            for y in labels:
+                n_samples += len(np.where(y == c)[0])
+            print "{}: {}".format(class_dict[c], n_samples)
+    else:
+        unique_labels = np.unique(labels)
+        for c in unique_labels:
+            n_samples = len(np.where(labels == c)[0])
+            print "{}: {}".format(class_dict[c], n_samples)

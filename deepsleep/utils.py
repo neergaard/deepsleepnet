@@ -1,5 +1,6 @@
 import itertools
 import numpy as np
+from tqdm import tqdm
 
 
 def get_balance_class_downsample(x, y):
@@ -65,20 +66,37 @@ def get_balance_class_oversample(x, y):
     return balance_x, balance_y
 
 
-def iterate_minibatches(inputs, targets, batch_size, shuffle=False):
+def iterate_minibatches(inputs, targets, batch_size, shuffle=False, index_to_record=None):
     """
     Generate a generator that return a batch of inputs and targets.
     """
-    assert len(inputs) == len(targets)
-    if shuffle:
-        indices = np.arange(len(inputs))
-        np.random.shuffle(indices)
-    for start_idx in range(0, len(inputs) - batch_size + 1, batch_size):
+    if index_to_record:
+        pass
+        indices = range(len(index_to_record['record']))
         if shuffle:
-            excerpt = indices[start_idx:start_idx + batch_size]
-        else:
-            excerpt = slice(start_idx, start_idx + batch_size)
-        yield inputs[excerpt], targets[excerpt]
+            np.random.shuffle(indices)
+        for start_idx in tqdm(range(0, len(indices) - batch_size + 1, batch_size)):
+            if shuffle:
+                excerpt = indices[start_idx:start_idx + batch_size]
+            else:
+                excerpt = range(start_idx, start_idx + batch_size)
+
+            x = np.stack([inputs[index_to_record['record'][i]][index_to_record['idx'][i]] for i in excerpt])
+            y = np.stack([targets[index_to_record['record'][i]][index_to_record['idx'][i]] for i in excerpt])
+
+            yield x, y
+
+    else:
+        assert len(inputs) == len(targets)
+        if shuffle:
+            indices = np.arange(len(inputs))
+            np.random.shuffle(indices)
+        for start_idx in range(0, len(inputs) - batch_size + 1, batch_size):
+            if shuffle:
+                excerpt = indices[start_idx:start_idx + batch_size]
+            else:
+                excerpt = slice(start_idx, start_idx + batch_size)
+            yield inputs[excerpt], targets[excerpt]
 
 
 def iterate_seq_minibatches(inputs, targets, batch_size, seq_length, stride):
@@ -102,7 +120,7 @@ def iterate_seq_minibatches(inputs, targets, batch_size, seq_length, stride):
         yield flatten_inputs, flatten_targets
 
 
-def iterate_batch_seq_minibatches(inputs, targets, batch_size, seq_length):
+def iterate_batch_seq_minibatches(inputs, targets, batch_size, seq_length, index_to_record=None):
     assert len(inputs) == len(targets)
     n_inputs = len(inputs)
     batch_len = n_inputs // batch_size
@@ -132,10 +150,10 @@ def iterate_list_batch_seq_minibatches(inputs, targets, batch_size, seq_length):
     for idx, each_data in enumerate(itertools.izip(inputs, targets)):
         each_x, each_y = each_data
         seq_x, seq_y = [], []
-        for x_batch, y_batch in iterate_seq_minibatches(inputs=each_x, 
-                                                        targets=each_y, 
-                                                        batch_size=1, 
-                                                        seq_length=seq_length, 
+        for x_batch, y_batch in iterate_seq_minibatches(inputs=each_x,
+                                                        targets=each_y,
+                                                        batch_size=1,
+                                                        seq_length=seq_length,
                                                         stride=1):
             seq_x.append(x_batch)
             seq_y.append(y_batch)
@@ -143,10 +161,10 @@ def iterate_list_batch_seq_minibatches(inputs, targets, batch_size, seq_length):
         seq_x = seq_x.reshape((-1, seq_length) + seq_x.shape[1:])
         seq_y = np.hstack(seq_y)
         seq_y = seq_y.reshape((-1, seq_length) + seq_y.shape[1:])
-        
-        for x_batch, y_batch in iterate_batch_seq_minibatches(inputs=seq_x, 
-                                                              targets=seq_y, 
-                                                              batch_size=batch_size, 
+
+        for x_batch, y_batch in iterate_batch_seq_minibatches(inputs=seq_x,
+                                                              targets=seq_y,
+                                                              batch_size=batch_size,
                                                               seq_length=1):
             x_batch = x_batch.reshape((-1,) + x_batch.shape[2:])
             y_batch = y_batch.reshape((-1,) + y_batch.shape[2:])

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import confusion_matrix, f1_score
+from tqdm import tqdm
 
 from deepsleep.data_loader import NonSeqDataLoader, SeqDataLoader
 from deepsleep.model import DeepFeatureNet, DeepSleepNet
@@ -127,13 +128,13 @@ class Trainer(object):
 class DeepFeatureNetTrainer(Trainer):
 
     def __init__(
-        self, 
-        data_dir, 
-        output_dir, 
-        n_folds, 
-        fold_idx, 
-        batch_size, 
-        input_dims, 
+        self,
+        data_dir,
+        output_dir,
+        n_folds,
+        fold_idx,
+        batch_size,
+        input_dims,
         n_classes,
         interval_plot_filter=50,
         interval_save_model=100,
@@ -152,8 +153,10 @@ class DeepFeatureNetTrainer(Trainer):
         self.batch_size = batch_size
         self.input_dims = input_dims
         self.n_classes = n_classes
+        self.index_to_record_train = None
+        self.index_to_record_eval = None
 
-    def _run_epoch(self, sess, network, inputs, targets, train_op, is_train):
+    def _run_epoch(self, sess, network, inputs, targets, train_op, is_train, index_to_record):
         start_time = time.time()
         y = []
         y_true = []
@@ -162,7 +165,9 @@ class DeepFeatureNetTrainer(Trainer):
         for x_batch, y_batch in iterate_minibatches(inputs,
                                                     targets,
                                                     self.batch_size,
-                                                    shuffle=is_shuffle):
+                                                    shuffle=is_shuffle,
+                                                    index_to_record=index_to_record
+                                                    ):
             feed_dict = {
                 network.input_var: x_batch,
                 network.target_var: y_batch
@@ -217,19 +222,19 @@ class DeepFeatureNetTrainer(Trainer):
         with tf.Graph().as_default(), tf.Session() as sess:
             # Build training and validation networks
             train_net = DeepFeatureNet(
-                batch_size=self.batch_size, 
-                input_dims=self.input_dims, 
-                n_classes=self.n_classes, 
+                batch_size=self.batch_size,
+                input_dims=self.input_dims,
+                n_classes=self.n_classes,
                 is_train=True,
-                reuse_params=False, 
+                reuse_params=False,
                 use_dropout=True
             )
             valid_net = DeepFeatureNet(
-                batch_size=self.batch_size, 
-                input_dims=self.input_dims, 
-                n_classes=self.n_classes, 
+                batch_size=self.batch_size,
+                input_dims=self.input_dims,
+                n_classes=self.n_classes,
                 is_train=False,
-                reuse_params=True, 
+                reuse_params=True,
                 use_dropout=True
             )
 
@@ -302,11 +307,12 @@ class DeepFeatureNetTrainer(Trainer):
             # Load data
             if sess.run(global_step) < n_epochs:
                 data_loader = NonSeqDataLoader(
-                    data_dir=self.data_dir, 
-                    n_folds=self.n_folds, 
+                    data_dir=self.data_dir,
+                    n_folds=self.n_folds,
                     fold_idx=self.fold_idx
                 )
-                x_train, y_train, x_valid, y_valid = data_loader.load_train_data()
+                # x_train, y_train, x_valid, y_valid = data_loader.load_train_data()
+                x_train, y_train, x_valid, y_valid, self.index_to_record_train, self.index_to_record_eval = data_loader.load_h5_train_data(n_files=None)
 
                 # Performance history
                 all_train_loss = np.zeros(n_epochs)
@@ -335,7 +341,8 @@ class DeepFeatureNetTrainer(Trainer):
                         sess=sess, network=train_net,
                         inputs=x_train, targets=y_train,
                         train_op=train_op,
-                        is_train=True
+                        is_train=True,
+                        index_to_record=self.index_to_record_train
                     )
                 n_train_examples = len(y_true_train)
                 train_cm = confusion_matrix(y_true_train, y_pred_train)
@@ -355,7 +362,8 @@ class DeepFeatureNetTrainer(Trainer):
                         sess=sess, network=valid_net,
                         inputs=x_valid, targets=y_valid,
                         train_op=tf.no_op(),
-                        is_train=False
+                        is_train=False,
+                        index_to_record=self.index_to_record_eval
                     )
                 n_valid_examples = len(y_true_val)
                 valid_cm = confusion_matrix(y_true_val, y_pred_val)
@@ -437,7 +445,7 @@ class DeepFeatureNetTrainer(Trainer):
                     )
                     duration = time.time() - start_time
                     print "Saved trained parameters ({:.3f} sec)".format(duration)
-        
+
         print "Finish pre-training"
         return os.path.join(output_dir, "params_fold{}.npz".format(self.fold_idx))
 
@@ -445,13 +453,13 @@ class DeepFeatureNetTrainer(Trainer):
 class DeepSleepNetTrainer(Trainer):
 
     def __init__(
-        self, 
-        data_dir, 
-        output_dir, 
-        n_folds, 
-        fold_idx, 
-        batch_size, 
-        input_dims, 
+        self,
+        data_dir,
+        output_dir,
+        n_folds,
+        fold_idx,
+        batch_size,
+        input_dims,
         n_classes,
         seq_length,
         n_rnn_layers,
@@ -476,13 +484,15 @@ class DeepSleepNetTrainer(Trainer):
         self.seq_length = seq_length
         self.n_rnn_layers = n_rnn_layers
         self.return_last = return_last
+        self.index_to_record_train = None
+        self.index_to_record_eval = None
 
-    def _run_epoch(self, sess, network, inputs, targets, train_op, is_train):
+    def _run_epoch(self, sess, network, inputs, targets, train_op, is_train, index_to_record):
         start_time = time.time()
         y = []
         y_true = []
         total_loss, n_batches = 0.0, 0
-        for sub_idx, each_data in enumerate(itertools.izip(inputs, targets)):
+        for sub_idx, each_data in enumerate(tqdm(itertools.izip(inputs, targets))):
             each_x, each_y = each_data
 
             # # Initialize state of LSTM - Unidirectional LSTM
@@ -495,7 +505,8 @@ class DeepSleepNetTrainer(Trainer):
             for x_batch, y_batch in iterate_batch_seq_minibatches(inputs=each_x,
                                                                   targets=each_y,
                                                                   batch_size=self.batch_size,
-                                                                  seq_length=self.seq_length):
+                                                                  seq_length=self.seq_length,
+                                                                  index_to_record=index_to_record):
                 feed_dict = {
                     network.input_var: x_batch,
                     network.target_var: y_batch
@@ -546,27 +557,27 @@ class DeepSleepNetTrainer(Trainer):
         with tf.Graph().as_default(), tf.Session() as sess:
             # Build training and validation networks
             train_net = DeepSleepNet(
-                batch_size=self.batch_size, 
-                input_dims=self.input_dims, 
-                n_classes=self.n_classes, 
+                batch_size=self.batch_size,
+                input_dims=self.input_dims,
+                n_classes=self.n_classes,
                 seq_length=self.seq_length,
                 n_rnn_layers=self.n_rnn_layers,
                 return_last=self.return_last,
-                is_train=True, 
-                reuse_params=False, 
-                use_dropout_feature=True, 
+                is_train=True,
+                reuse_params=False,
+                use_dropout_feature=True,
                 use_dropout_sequence=True
             )
             valid_net = DeepSleepNet(
-                batch_size=self.batch_size, 
-                input_dims=self.input_dims, 
-                n_classes=self.n_classes, 
+                batch_size=self.batch_size,
+                input_dims=self.input_dims,
+                n_classes=self.n_classes,
                 seq_length=self.seq_length,
                 n_rnn_layers=self.n_rnn_layers,
                 return_last=self.return_last,
-                is_train=False, 
-                reuse_params=True, 
-                use_dropout_feature=True, 
+                is_train=False,
+                reuse_params=True,
+                use_dropout_feature=True,
                 use_dropout_sequence=True
             )
 
@@ -674,7 +685,7 @@ class DeepSleepNetTrainer(Trainer):
                         tmp_tensor = tf.get_default_graph().get_tensor_by_name(k)
                         sess.run(
                             tf.assign(
-                                tmp_tensor, 
+                                tmp_tensor,
                                 v
                             )
                         )
@@ -687,11 +698,12 @@ class DeepSleepNetTrainer(Trainer):
             # Load data
             if sess.run(global_step) < n_epochs:
                 data_loader = SeqDataLoader(
-                    data_dir=self.data_dir, 
-                    n_folds=self.n_folds, 
+                    data_dir=self.data_dir,
+                    n_folds=self.n_folds,
                     fold_idx=self.fold_idx
                 )
-                x_train, y_train, x_valid, y_valid = data_loader.load_train_data()
+                # x_train, y_train, x_valid, y_valid = data_loader.load_train_data()
+                x_train, y_train, x_valid, y_valid = data_loader.load_h5_train_data(n_files=20)
 
                 # Performance history
                 all_train_loss = np.zeros(n_epochs)
@@ -709,7 +721,8 @@ class DeepSleepNetTrainer(Trainer):
                         sess=sess, network=train_net,
                         inputs=x_train, targets=y_train,
                         train_op=train_op,
-                        is_train=True
+                        is_train=True,
+                        index_to_record=self.index_to_record_train
                     )
                 n_train_examples = len(y_true_train)
                 train_cm = confusion_matrix(y_true_train, y_pred_train)
@@ -722,7 +735,8 @@ class DeepSleepNetTrainer(Trainer):
                         sess=sess, network=valid_net,
                         inputs=x_valid, targets=y_valid,
                         train_op=tf.no_op(),
-                        is_train=False
+                        is_train=False,
+                        index_to_record=self.index_to_record_train
                     )
                 n_valid_examples = len(y_true_val)
                 valid_cm = confusion_matrix(y_true_val, y_pred_val)
@@ -804,6 +818,6 @@ class DeepSleepNetTrainer(Trainer):
                     )
                     duration = time.time() - start_time
                     print "Saved trained parameters ({:.3f} sec)".format(duration)
-        
+
         print "Finish fine-tuning"
         return os.path.join(output_dir, "params_fold{}.npz".format(self.fold_idx))
